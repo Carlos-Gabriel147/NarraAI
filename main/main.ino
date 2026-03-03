@@ -6,18 +6,30 @@
 #include "HT_SSD1306Wire.h"
 
 // Definições de valores
-#define SCAN_PERIOD_MS 1000
+#define SCAN_PERIOD_MS 2000
 #define SCAN_DURATION_S 1
 #define MULTIPLE_FINDS true
 
+// Estrutura dipositivo
+struct Device{
+  const char* name;
+  const char* mac;
+  int threshold_rssi;
+  bool is_set;
+};
+
 // Variáveis globais
 static uint32_t lastScanTime = 0;
-static bool moizaFound = false;
-volatile int lastRSSI = 0;
 volatile bool newData = false;
-int lastValidRSSI = 0;
-bool hasValidReading = false;
+volatile uint32_t current_device = -1;
 BLEScan* bleScanner = nullptr;
+Device devices[] = {
+  {"Macaco", "de:ad:be:ef:00:02", -70, false},
+  {"Rato", "11:22:33:44:55:66", -70, false},
+  {"Arara", "aa:22:33:44:55:66", -70, false},
+  {"Tartaruga", "bb:22:33:44:55:66", -70, false}
+};
+const int deviceCount = sizeof(devices) / sizeof(devices[0]);
 
 // Ajuste automático para alguns modelos
 #ifdef WIRELESS_STICK_V3
@@ -31,26 +43,25 @@ class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
   void onResult(BLEAdvertisedDevice device) override {
 
-    String name = device.getName();
+    String mac = device.getAddress().toString();
+    int rsii = device.getRSSI();
+    
+    for(int i=0; i<deviceCount; i++){
+     
+      if((mac==devices[i].mac) and (rsii>devices[i].threshold_rssi) and (!devices[i].is_set)){
+        current_device = i;
+        //devices[i].is_set = true; Desabilitar, pois já escutou esse audio
+        newData = true;
+      }
 
-    if (!name.isEmpty() && name == "MOIZA") {
-
-      moizaFound = true;
-
-      lastRSSI = device.getRSSI();
-      lastValidRSSI = lastRSSI;
-      hasValidReading = true;
-      newData = true;
-
-      Serial.print("RSSI: ");
-      Serial.println(lastRSSI);
     }
+
   }
+  
 };
 
 // ========================== Bluetooth Scan ========================== //
 void startScan() {
-  moizaFound = false;
   bleScanner->start(SCAN_DURATION_S, false);
   bleScanner->clearResults();
 }
@@ -108,35 +119,15 @@ void loop() {
     startScan();
   }
 
-  display.clear();
-
-  // ===== TEXTO CENTRAL GRANDE =====
-  display.setFont(ArialMT_Plain_24);
-
-  if (moizaFound) {
-    // Mostra leitura atual
-    display.drawString(display.getWidth() / 2, 18, String(lastRSSI));
-  } else {
-    // Não encontrou → mostra **
-    display.drawString(display.getWidth() / 2, 18, "**");
+  if(newData){
+    newData = false;
+    Serial.print("Dispositivo encontrado: ");
+    Serial.println(devices[current_device].name);
   }
 
-  // ===== ÚLTIMA LEITURA PEQUENA NO CANTO =====
-  if (hasValidReading) {
-
-    display.setFont(ArialMT_Plain_10);
-
-    display.setTextAlignment(TEXT_ALIGN_RIGHT);
-
-    display.drawString(
-      display.getWidth() - 2,
-      display.getHeight() - 12,
-      String(lastValidRSSI));
-
-    display.setTextAlignment(TEXT_ALIGN_CENTER);
-  }
-
-  display.display();
+  //display.clear();
+  //display.setFont(ArialMT_Plain_24);
+  //display.display();
 
   delay(10);
 }
