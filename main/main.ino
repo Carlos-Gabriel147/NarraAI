@@ -15,19 +15,20 @@ struct Device{
   const char* name;
   const char* mac;
   int threshold_rssi;
+  int current_rssi;
   bool is_set;
 };
 
 // Variáveis globais
 static uint32_t lastScanTime = 0;
 volatile bool newData = false;
-volatile uint32_t current_device = -1;
+std::vector<int> devices_found;
 BLEScan* bleScanner = nullptr;
 Device devices[] = {
-  {"Macaco", "de:ad:be:ef:00:02", -70, false},
-  {"Rato", "11:22:33:44:55:66", -70, false},
-  {"Arara", "aa:22:33:44:55:66", -70, false},
-  {"Tartaruga", "bb:22:33:44:55:66", -70, false}
+  {"Macaco", "de:ad:be:ef:00:02", -70, -9999, false},
+  {"Rato", "11:22:33:44:55:66", -70, -9999, false},
+  {"Arara", "aa:22:33:44:55:66", -70, -9999, false},
+  {"Tartaruga", "bb:22:33:44:55:66", -70, -9999, false}
 };
 const int deviceCount = sizeof(devices) / sizeof(devices[0]);
 
@@ -42,15 +43,18 @@ static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RS
 class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
   void onResult(BLEAdvertisedDevice device) override {
-
+  
+    // Pega o MAC e a potencia do sinal atual do dispositivo encontrado
     String mac = device.getAddress().toString();
     int rsii = device.getRSSI();
     
+    // Verifica se é um dispositivo da lista
     for(int i=0; i<deviceCount; i++){
-     
+      
+      // Se a potencia atual é maior do que um limite, salva esse dispositivo
       if((mac==devices[i].mac) and (rsii>devices[i].threshold_rssi) and (!devices[i].is_set)){
-        current_device = i;
-        //devices[i].is_set = true; Desabilitar, pois já escutou esse audio
+        devices[i].current_rssi = rsii;
+        devices_found.push_back(i);
         newData = true;
       }
 
@@ -120,10 +124,33 @@ void loop() {
   }
 
   if(newData){
+
     newData = false;
-    Serial.print("Dispositivo encontrado: ");
-    Serial.println(devices[current_device].name);
+    int chosen_id = -1;
+    int pass_rssi = -9999;
+    
+    // Percorre dos dispositivos da lista encotrados
+    for(int id in devices_found){
+
+      // Se a potencia do sinal atual de um dispositivo for maior que outro, escolhe o maior
+      if(device[id].current_rssi > pass_rssi){
+        chosen_id = id;
+      }
+
+      // Atualiza e limpa valores do rssi
+      pass_rssi = device[id].current_rssi;
+      device[id].current_rssi = -9999;
+    }
+
+    Serial.print(chosen_id);
+    Serial.print(": ");
+    Serial.println(devices[chosen_id]);
+
   }
+
+
+
+  Serial.println();
 
   //display.clear();
   //display.setFont(ArialMT_Plain_24);
