@@ -33,7 +33,7 @@ class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
     String name = device.getName();
 
-    if (!name.isEmpty() && name == "MOIZA") {
+    if (!name.isEmpty() && name == "MOIZA2") {
 
       moizaFound = true;
 
@@ -44,6 +44,8 @@ class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
       Serial.print("RSSI: ");
       Serial.println(lastRSSI);
+      Serial.print("MAC: ");
+      Serial.println(device.getAddress().toString());
     }
   }
 };
