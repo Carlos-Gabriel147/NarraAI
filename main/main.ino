@@ -13,6 +13,7 @@
 #define MULTIPLE_FINDS true
 #define VIRTUAL_RX 2
 #define VIRTUAL_TX 0
+#define BUTTON_INT 17
 
 // Ajuste automático para alguns modelos
 #ifdef WIRELESS_STICK_V3
@@ -121,6 +122,21 @@ void displayRefrash(void *parameter) {
 
 }
 
+// =========================== Troca de linguagem =========================== //
+void IRAM_ATTR buttonISR(){
+
+  static uint32_t lastInterrupt = 0;
+  uint32_t now = millis();
+
+  if(now - lastInterrupt > 200){
+    chosen_language++;
+    if(chosen_language > 2){
+      chosen_language = 0;
+    }
+    lastInterrupt = now;
+  }
+
+}
 
 // ============================== SETUP ============================== //
 void setup() {
@@ -165,6 +181,10 @@ void setup() {
   mp3Serial.begin(9600, SERIAL_8N1, VIRTUAL_RX, VIRTUAL_TX); delay(100);
   sendCommandMp3(0x0C, false, 0, 0); delay(100);
   sendCommandMp3(0x06, false, 0, 0x1E);
+
+  // Seta a interrupção da mudança de linguagem
+  pinMode(BUTTON_INT, INPUT_PULLUP);
+  attachInterrupt(BUTTON_INT, buttonISR, FALLING);
 
   // Tudo inicializado
   display.clear();
@@ -238,19 +258,6 @@ void loop() {
 
     // Setar que já foi reproduzido
     devices[chosen_id].is_set = true;
-
-    // Display ESSA PARTE VAI SER EM UMA THREAD
-    display.clear();
-
-    display.setTextAlignment(TEXT_ALIGN_CENTER);
-    display.setFont(ArialMT_Plain_24);
-    display.drawString(display.getWidth() / 2, 0, devices[chosen_id].name);
-
-    display.setFont(ArialMT_Plain_16);
-    String rssiText = String(devices[chosen_id].current_rssi);
-    display.drawString(display.getWidth() / 2, 35, rssiText);
-
-    display.display();
   }
 
   delay(10);
