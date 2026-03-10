@@ -13,7 +13,8 @@
 #define MULTIPLE_FINDS true
 #define VIRTUAL_RX 2
 #define VIRTUAL_TX 0
-#define BUTTON_INT 17
+#define BUTTON_INT_LG 17
+#define DEBOUNCE_TIME 20
 
 // Ajuste automático para alguns modelos
 #ifdef WIRELESS_STICK_V3
@@ -39,6 +40,7 @@ volatile Device devices[] = {
 
 // Linguagens
 const char* languages[] = { "Português", "English", "Español" };
+size_t num_languages = sizeof(languages) / sizeof(languages[0]);
 
 // Quantiade de dispositivos
 const int deviceCount = sizeof(devices) / sizeof(devices[0]);
@@ -49,6 +51,7 @@ static uint32_t lastScanTime = 0;
 int pass_rssi = -9999;
 volatile int chosen_id = -1;
 volatile int chosen_language = 0;
+volatile bool bnt_lg_press = false;
 
 std::vector<int> devices_found;
 
@@ -124,18 +127,42 @@ void displayRefrash(void *parameter) {
 
 // =========================== Troca de linguagem =========================== //
 void IRAM_ATTR buttonISR(){
+  if(!bnt_lg_press){
+    bnt_lg_press = true;
+    xTaskCreatePinnedToCore(changeLanguage, "changeLanguade", 4096, NULL, 1, NULL, 0);
+  }
+}
 
-  static uint32_t lastInterrupt = 0;
-  uint32_t now = millis();
+void changeLanguage(void *parameter){
 
-  if(now - lastInterrupt > 200){
-    chosen_language++;
-    if(chosen_language > 2){
-      chosen_language = 0;
+  bool current_state = 0;
+  bool previous_state = 1;
+  uint32_t time = millis();
+
+  while(true){
+
+    current_state = digitalRead(BUTTON_INT_LG);
+
+    if(current_state != previous_state){
+      time = millis();
     }
-    lastInterrupt = now;
+
+    if(millis() - time >= DEBOUNCE_TIME){
+
+      if(current_state == LOW){
+        chosen_language += 1;
+        chosen_language %= num_languages;
+      }
+
+      bnt_lg_press = false;
+      break;
+    }
+
+    previous_state = current_state;
+
   }
 
+  vTaskDelete(NULL);
 }
 
 // ============================== SETUP ============================== //
@@ -183,8 +210,8 @@ void setup() {
   sendCommandMp3(0x06, false, 0, 0x1E);
 
   // Seta a interrupção da mudança de linguagem
-  pinMode(BUTTON_INT, INPUT_PULLUP);
-  attachInterrupt(BUTTON_INT, buttonISR, FALLING);
+  pinMode(BUTTON_INT_LG, INPUT_PULLUP);
+  attachInterrupt(BUTTON_INT_LG, buttonISR, FALLING);
 
   // Tudo inicializado
   display.clear();
@@ -194,7 +221,7 @@ void setup() {
   // Inicia thread de atualização do display
   xTaskCreatePinnedToCore(
     displayRefrash,      // função
-    "DisplayTask",    // nome
+    "DisplayRefrash",    // nome
     4096,             // stack
     NULL,             // parâmetro
     1,                // prioridade
