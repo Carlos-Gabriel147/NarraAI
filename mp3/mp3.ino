@@ -1,23 +1,21 @@
 #include <Arduino.h>
+#include <Wire.h>               
+#include "HT_SSD1306Wire.h"
+#include "images.h"
 
-// --- Pins for Serial2 (hardware UART2) ---
-static const int MP3_RX_PIN = 16; // ESP32 RX2  <- MP3 TX
-static const int MP3_TX_PIN = 17; // ESP32 TX2  -> MP3 RX
+static const int MP3_RX_PIN = 2; // ESP32 RX2  <- MP3 TX
+static const int MP3_TX_PIN = 0; // ESP32 TX2  -> MP3 RX
 static const uint32_t MP3_BAUD = 9600;
 
-// --- YX5300-style 10-byte command frame ---
-// [0] 0x7E start
-// [1] 0xFF version
-// [2] 0x06 length
-// [3] cmd
-// [4] feedback (0x00 no, 0x01 yes)
-// [5] param high
-// [6] param low
-// [7] checksum high
-// [8] checksum low
-// [9] 0xEF end
+static SSD1306Wire  display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_128_64, RST_OLED); // addr , freq , i2c group , resolution , rst
 
-static void mp3SendCmd(uint8_t cmd, uint16_t param, bool feedback = false) {
+#define DEMO_DURATION 3000
+typedef void (*Demo)(void);
+
+int demoMode = 0;
+int counter = 1;
+
+static void mp3SendCmd(uint8_t cmd, uint16_t param, bool feedback = true) {
   uint8_t buf[10];
   buf[0] = 0x7E;
   buf[1] = 0xFF;
@@ -79,24 +77,151 @@ static void mp3PollResponses() {
 
 void setup() {
   Serial.begin(115200);
-  delay(300);
+  Serial.println();
+  Serial.println();
+  VextON();
+  delay(100);
 
-  // Start Serial2 on custom pins
+  // Initialising the UI will init the display too.
+  display.init();
+
+  display.setFont(ArialMT_Plain_10);
+
   Serial2.begin(MP3_BAUD, SERIAL_8N1, MP3_RX_PIN, MP3_TX_PIN);
 
   Serial.println("YX5300 control via Serial2 on GPIO16/17");
   delay(1000); // allow MP3 board to boot
 
-  mp3SetVolume(20); // 0..30
+  mp3SetVolume(30); // 0..30
   delay(200);
 
-  // Example playback
-  mp3PlayTrack(1);
-  // Or: mp3PlayFolderFile(1, 1);
 }
 
+void drawFontFaceDemo() {
+    // Font Demo1
+    // create more fonts at http://oleddisplay.squix.ch/
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+    display.setFont(ArialMT_Plain_10);
+    display.drawString(0, 0, "Hello world");
+    display.setFont(ArialMT_Plain_16);
+    display.drawString(0, 10, "Hello world");
+    display.setFont(ArialMT_Plain_24);
+    display.drawString(0, 26, "Hello world");
+}
+
+void drawTextFlowDemo() {
+    display.setFont(ArialMT_Plain_10);
+    display.setTextAlignment(TEXT_ALIGN_LEFT);
+    display.drawStringMaxWidth(0, 0, 128,
+      "Lorem ipsum\n dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore." );
+}
+
+void drawTextAlignmentDemo() {
+  // Text alignment demo
+  char str[30];
+  int x = 0;
+  int y = 0;
+  display.setFont(ArialMT_Plain_10);
+  // The coordinates define the left starting point of the text
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.drawString(x, y, "Left aligned (0,0)");
+
+  // The coordinates define the center of the text
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  x = display.width()/2;
+  y = display.height()/2-5;
+  sprintf(str,"Center aligned (%d,%d)",x,y);
+  display.drawString(x, y, str);
+
+  // The coordinates define the right end of the text
+  display.setTextAlignment(TEXT_ALIGN_RIGHT);
+  x = display.width();
+  y = display.height()-12;
+  sprintf(str,"Right aligned (%d,%d)",x,y);
+  display.drawString(x, y, str);
+}
+
+void drawRectDemo() {
+      // Draw a pixel at given position
+    for (int i = 0; i < 10; i++) {
+      display.setPixel(i, i);
+      display.setPixel(10 - i, i);
+    }
+    display.drawRect(12, 12, 20, 20);
+
+    // Fill the rectangle
+    display.fillRect(14, 14, 17, 17);
+
+    // Draw a line horizontally
+    display.drawHorizontalLine(0, 40, 20);
+
+    // Draw a line horizontally
+    display.drawVerticalLine(40, 0, 20);
+}
+
+void drawCircleDemo() {
+  for (int i=1; i < 8; i++) {
+    display.setColor(WHITE);
+    display.drawCircle(32, 32, i*3);
+    if (i % 2 == 0) {
+      display.setColor(BLACK);
+    }
+    display.fillCircle(96, 32, 32 - i* 3);
+  }
+}
+
+void drawProgressBarDemo() {
+  int progress = (counter / 5) % 100;
+  // draw the progress bar
+  display.drawProgressBar(0, 32, 120, 10, progress);
+
+  // draw the percentage as String
+  display.setTextAlignment(TEXT_ALIGN_CENTER);
+  display.drawString(64, 15, String(progress) + "%");
+}
+
+void drawImageDemo() {
+    // see http://blog.squix.org/2015/05/esp8266-nodemcu-how-to-create-xbm.html
+    // on how to create xbm files
+    display.drawXbm(0, 0, WiFi_Logo_width, WiFi_Logo_height, WiFi_Logo_bits);
+}
+
+void VextON(void)
+{
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, LOW);
+}
+
+void VextOFF(void) //Vext default OFF
+{
+  pinMode(Vext,OUTPUT);
+  digitalWrite(Vext, HIGH);
+}
+
+
+Demo demos[] = {drawFontFaceDemo, drawTextFlowDemo, drawTextAlignmentDemo, drawRectDemo, drawCircleDemo, drawProgressBarDemo, drawImageDemo};
+int demoLength = (sizeof(demos) / sizeof(Demo));
+long timeSinceLastModeSwitch = 0;
+
 void loop() {
-  static bool paused = false;
+  // clear the display
+  display.clear();
+  // draw the current demo method
+  demos[6]();
+
+  //display.setTextAlignment(TEXT_ALIGN_RIGHT);
+  //display.drawString(10, 128, String(millis()));
+  // write the buffer to the display
+  display.display();
+
+  //if (millis() - timeSinceLastModeSwitch > DEMO_DURATION) {
+  //  demoMode = (demoMode + 1)  % demoLength;
+  //  timeSinceLastModeSwitch = millis();
+  //}
+  //counter++;
+  delay(10);
+
+    static bool paused = false;
 
   // Simple Serial monitor controls:
   // n=next, p=prev, space=pause/resume, s=stop, 1..9=play track #
@@ -107,6 +232,9 @@ void loop() {
     if (c == 'n') mp3Next();
     else if (c == 'p') mp3Prev();
     else if (c == 's') { mp3Stop(); paused = false; }
+    else if (c == '1') {mp3PlayFolderFile(1,1); paused = false;}
+    else if (c == '2') {mp3PlayFolderFile(2,1); paused = false;}
+    else if (c == '3') {mp3PlayFolderFile(3,1); paused = false;}
     else if (c == ' ') {
       if (!paused) { mp3Pause(); paused = true; }
       else         { mp3Resume(); paused = false; }

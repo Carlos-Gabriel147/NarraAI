@@ -8,13 +8,13 @@ BTLE btle(&radio);
 uint8_t dummy = 0x00;   // dado mínimo
 
 void setup() {
-  Serial.begin(57600);
+  Serial.begin(115200);
   while (!Serial) {}
 
   Serial.println("BTLE beacon iniciado");
 
   // nome (máx 8 chars)
-  btle.begin("MOIZA2");
+  btle.begin("3 - Calopsita");
 }
 
 void loop() {

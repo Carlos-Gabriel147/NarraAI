@@ -5,21 +5,33 @@
 #include <Wire.h>
 #include "HT_SSD1306Wire.h"
 
-// Definições de valores
+// Definições
 #define SCAN_PERIOD_MS 1000
 #define SCAN_DURATION_S 1
 #define MULTIPLE_FINDS true
 
+// ===== LISTA DE DISPOSITIVOS QUE VOCÊ QUER DETECTAR =====
+const char* targetNames[] = {
+  "MOIZA",
+  "2 - Pardal",
+  "3 - Calopsita"
+};
+
+const int targetCount = sizeof(targetNames) / sizeof(targetNames[0]);
+
 // Variáveis globais
 static uint32_t lastScanTime = 0;
-static bool moizaFound = false;
 volatile int lastRSSI = 0;
-volatile bool newData = false;
 int lastValidRSSI = 0;
 bool hasValidReading = false;
+bool deviceFound = false;
+
+String foundName = "";
+String foundMAC = "";
+
 BLEScan* bleScanner = nullptr;
 
-// Ajuste automático para alguns modelos
+// OLED
 #ifdef WIRELESS_STICK_V3
 static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_64_32, RST_OLED);
 #else
@@ -33,26 +45,40 @@ class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
 
     String name = device.getName();
 
-    if (!name.isEmpty() && name == "MOIZA2") {
+    if(name.isEmpty()) return;
 
-      moizaFound = true;
+    // verifica se o nome está na lista
+    for(int i = 0; i < targetCount; i++){
 
-      lastRSSI = device.getRSSI();
-      lastValidRSSI = lastRSSI;
-      hasValidReading = true;
-      newData = true;
+      if(name == targetNames[i]){
 
-      Serial.print("RSSI: ");
-      Serial.println(lastRSSI);
-      Serial.print("MAC: ");
-      Serial.println(device.getAddress().toString());
+        deviceFound = true;
+
+        lastRSSI = device.getRSSI();
+        lastValidRSSI = lastRSSI;
+        hasValidReading = true;
+
+        foundName = name;
+        foundMAC = device.getAddress().toString();
+
+        Serial.println();
+        Serial.println("Encontrado:");
+        Serial.print("Nome: ");
+        Serial.println(foundName);
+        Serial.print("MAC: ");
+        Serial.println(foundMAC);
+        Serial.print("RSSI: ");
+        Serial.println(lastRSSI);
+
+        break;
+      }
     }
   }
 };
 
 // ========================== Bluetooth Scan ========================== //
 void startScan() {
-  moizaFound = false;
+  deviceFound = false;
   bleScanner->start(SCAN_DURATION_S, false);
   bleScanner->clearResults();
 }
@@ -60,15 +86,13 @@ void startScan() {
 // ============================== SETUP ============================== //
 void setup() {
 
-  // Inicialização do serial
   Serial.begin(115200);
   delay(200);
 
-  // Inicialização do OLED
   Serial.println("Inicializando OLED...");
 
   pinMode(Vext, OUTPUT);
-  digitalWrite(Vext, LOW);  // LOW liga alimentação do OLED
+  digitalWrite(Vext, LOW);
 
   delay(100);
 
@@ -80,19 +104,18 @@ void setup() {
   display.setTextAlignment(TEXT_ALIGN_CENTER);
   display.setFont(ArialMT_Plain_16);
 
-  display.drawString(display.getWidth() / 2, 20, "INICIANDO...");
+  display.drawString(display.getWidth()/2,20,"INICIANDO...");
   display.display();
 
   Serial.println("OLED OK");
 
-  // Inicialização do Bluetooth
   Serial.println("Inicializando BLE...");
 
   BLEDevice::init("");
 
   bleScanner = BLEDevice::getScan();
   bleScanner->setAdvertisedDeviceCallbacks(new AdvertisedDeviceCallbacks(), MULTIPLE_FINDS);
-  bleScanner->setActiveScan(false);  // menor consumo
+  bleScanner->setActiveScan(false);
   bleScanner->setInterval(200);
   bleScanner->setWindow(100);
 
@@ -104,7 +127,6 @@ void setup() {
 // ============================== LOOP ============================== //
 void loop() {
 
-  // Scan periódico
   if (millis() - lastScanTime >= SCAN_PERIOD_MS) {
     lastScanTime = millis();
     startScan();
@@ -112,27 +134,23 @@ void loop() {
 
   display.clear();
 
-  // ===== TEXTO CENTRAL GRANDE =====
   display.setFont(ArialMT_Plain_24);
 
-  if (moizaFound) {
-    // Mostra leitura atual
-    display.drawString(display.getWidth() / 2, 18, String(lastRSSI));
-  } else {
-    // Não encontrou → mostra **
-    display.drawString(display.getWidth() / 2, 18, "**");
+  if(deviceFound){
+    display.drawString(display.getWidth()/2,18,String(lastRSSI));
+  } 
+  else{
+    display.drawString(display.getWidth()/2,18,"**");
   }
 
-  // ===== ÚLTIMA LEITURA PEQUENA NO CANTO =====
-  if (hasValidReading) {
+  if(hasValidReading){
 
     display.setFont(ArialMT_Plain_10);
-
     display.setTextAlignment(TEXT_ALIGN_RIGHT);
 
     display.drawString(
-      display.getWidth() - 2,
-      display.getHeight() - 12,
+      display.getWidth()-2,
+      display.getHeight()-12,
       String(lastValidRSSI));
 
     display.setTextAlignment(TEXT_ALIGN_CENTER);
