@@ -14,6 +14,7 @@
 #define VIRTUAL_RX 2
 #define VIRTUAL_TX 0
 #define BUTTON_INT_LG 17
+#define BUTTON_INT_RS 18
 #define DEBOUNCE_TIME 20
 
 // Ajuste automático para alguns modelos
@@ -34,8 +35,8 @@ struct Device {
 
 // Filtro de dispositivos
 volatile Device devices[] = {
-  { "MOIZA", "de:ad:be:ef:00:02", -80, -9999, false },
-  { "MOIZA2", "e6:03:04:12:29:39", -80, -9999, false }
+  { "1 Rolinha Preta", "de:ad:be:ef:00:02", -80, -9999, false },
+  { "2 Rolinha Roxa", "e6:03:04:12:29:39", -80, -9999, false }
 };
 
 // Linguagens
@@ -52,6 +53,8 @@ int pass_rssi = -9999;
 volatile int chosen_id = -1;
 volatile int chosen_language = 0;
 volatile bool bnt_lg_press = false;
+volatile bool bnt_rs_press = false;
+volatile bool repeat_audio = false;
 
 std::vector<int> devices_found;
 
@@ -72,7 +75,7 @@ class AdvertisedDeviceCallbacks : public BLEAdvertisedDeviceCallbacks {
     for (int i = 0; i < deviceCount; i++) {
 
       // Se a potencia atual é maior do que um limite, salva esse dispositivo
-      if ((mac == devices[i].mac) and (rsii > devices[i].threshold_rssi) and (!devices[i].is_set)) {
+      if ((mac == devices[i].mac) and (rsii > devices[i].threshold_rssi)) {
 
         // Adicionar a potencia atual do dispositivo
         devices[i].current_rssi = rsii;
@@ -116,8 +119,20 @@ void displayRefrash(void *parameter) {
 
     display.clear();
     display.setTextAlignment(TEXT_ALIGN_CENTER);
-    display.setFont(ArialMT_Plain_24);
-    display.drawString(display.getWidth()/2, 20, languages[chosen_language]);
+
+    // ----- TÍTULO (DISPOSITIVO) -----
+    display.setFont(ArialMT_Plain_16);
+
+    if(chosen_id >= 0 && chosen_id < deviceCount){
+      display.drawString(display.getWidth()/2, 12, devices[chosen_id].name);
+    }
+    else{
+      display.drawString(display.getWidth()/2, 4, "- - -");
+    }
+
+    // ----- IDIOMA -----
+    display.setFont(ArialMT_Plain_16);
+    display.drawString(display.getWidth()/2, display.getHeight() - 20, languages[chosen_language]);
     display.display();
 
     vTaskDelay(200 / portTICK_PERIOD_MS);
@@ -126,10 +141,10 @@ void displayRefrash(void *parameter) {
 }
 
 // =========================== Troca de linguagem =========================== //
-void IRAM_ATTR buttonISR(){
+void IRAM_ATTR buttonLG_ISR(){
   if(!bnt_lg_press){
     bnt_lg_press = true;
-    xTaskCreatePinnedToCore(changeLanguage, "changeLanguade", 4096, NULL, 1, NULL, 0);
+    xTaskCreatePinnedToCore(changeLanguage, "changeLanguage", 4096, NULL, 1, NULL, 0);
   }
 }
 
@@ -155,6 +170,45 @@ void changeLanguage(void *parameter){
       }
 
       bnt_lg_press = false;
+      break;
+    }
+
+    previous_state = current_state;
+
+  }
+
+  vTaskDelete(NULL);
+}
+
+// =========================== Reset de set  =========================== //
+void IRAM_ATTR buttonRS_ISR(){
+  if(!bnt_rs_press){
+    bnt_rs_press = true;
+    xTaskCreatePinnedToCore(resetSet, "resetSet", 4096, NULL, 1, NULL, 0);
+  }
+}
+
+void resetSet(void *parameter){
+
+  bool current_state = 0;
+  bool previous_state = 1;
+  uint32_t time = millis();
+
+  while(true){
+
+    current_state = digitalRead(BUTTON_INT_RS);
+
+    if(current_state != previous_state){
+      time = millis();
+    }
+
+    if(millis() - time >= DEBOUNCE_TIME){
+
+      if(current_state == LOW){
+        repeat_audio = true;
+      }
+
+      bnt_rs_press = false;
       break;
     }
 
@@ -211,7 +265,11 @@ void setup() {
 
   // Seta a interrupção da mudança de linguagem
   pinMode(BUTTON_INT_LG, INPUT_PULLUP);
-  attachInterrupt(BUTTON_INT_LG, buttonISR, FALLING);
+  attachInterrupt(BUTTON_INT_LG, buttonLG_ISR, FALLING);
+
+  // Seta a interrupção do reset de set
+  pinMode(BUTTON_INT_RS, INPUT_PULLUP);
+  attachInterrupt(BUTTON_INT_RS, buttonRS_ISR, FALLING);
 
   // Tudo inicializado
   display.clear();
@@ -258,33 +316,47 @@ void loop() {
       }
     }
 
+    Serial.println("Atualizado: " + (String) chosen_id);
+
     // Limpa a lista para a próxima procura
     devices_found.clear();
 
     // Executar som do id encontrado/escolhido
     if (!devices[chosen_id].is_set) {
       sendCommandMp3(0x0F, true, chosen_language + 1, chosen_id + 1);
+
+      Serial.println();
+      Serial.println("MP3: " + (String)(chosen_language + 1) + (String)(chosen_id + 1));
+
+      // Espera terminar o audio atual para continuar para o próximo audio
+      while(true){
+        if(mp3Serial.available()){
+          if(mp3Serial.read()==61){
+            Serial.println("Terminou audio");
+            break;
+          }
+        }
+      }
+
+      // Setar que já foi reproduzido
+      devices[chosen_id].is_set = true;
+      
     }
 
-    Serial.println();
-    Serial.print("Chosen language: ");
-    Serial.println(chosen_language);
-    Serial.print("Chosen id: ");
-    Serial.println(chosen_id);
-    Serial.println("MP3: " + (String)(chosen_language + 1) + (String)(chosen_id + 1));
+  }
 
-    // Espera terminar o audio atual para continuar para o próximo audio
+  // Repetir audio se solicitado
+  if(repeat_audio){
+    sendCommandMp3(0x0F, true, chosen_language + 1, chosen_id + 1);
     while(true){
       if(mp3Serial.available()){
         if(mp3Serial.read()==61){
-          Serial.println("Terminou audio");
+          Serial.println("Repetiu audio");
           break;
         }
       }
     }
-
-    // Setar que já foi reproduzido
-    devices[chosen_id].is_set = true;
+    repeat_audio = false;
   }
 
   delay(10);
