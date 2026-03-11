@@ -36,8 +36,8 @@ struct Device {
 // Filtro de dispositivos
 volatile Device devices[] = {
   {"1 - Moiza", "de:ad:be:ef:00:02", -80, -9999, false},
-  {"2 - Pardal", "e6:03:04:12:29:39", -80, -9999, false},
-  {"3 - Calopsita", "ALTERAR PORRA", -80, -999, false}
+  {"2 - Pardal", "03:00:ef:be:ad:de", -80, -9999, false},
+  {"3 - Calopsita", "6b:21:77:4c:8f:d2", -80, -999, false}
 };
 
 // Linguagens
