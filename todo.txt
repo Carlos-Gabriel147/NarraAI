@@ -1,5 +1,5 @@
 OK - ajustar MAC beacons
 OK - limpar sets
 som inicialização
-som seletor de idiomas
+OK - som seletor de idiomas
 

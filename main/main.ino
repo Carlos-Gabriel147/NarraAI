@@ -52,6 +52,7 @@ volatile bool finished_scan = false;
 volatile bool bnt_lg_press = false;
 volatile bool bnt_rs_press = false;
 volatile bool repeat_audio = false;
+volatile bool playing_audio = false;
 volatile int chosen_language = 0;
 volatile int chosen_id = -1;
 
@@ -170,10 +171,25 @@ void changeLanguage(void *parameter){
     if(millis() - time >= DEBOUNCE_TIME){
 
       // Incrementar linguagem
-      if(current_state == LOW){
+      if(current_state==LOW && !playing_audio){
+
+        playing_audio = true;
         chosen_language += 1;
         chosen_language %= num_languages;
-      }
+
+        sendCommandMp3(0x0F, false, 99, chosen_language+1);
+
+        while(true){
+          if(mp3Serial.available()){
+            if(mp3Serial.read()==61){
+              Serial.println("Terminou audio");
+              break;
+            }
+          }
+          delay(1);
+        }
+        playing_audio = false;
+    }
 
       bnt_lg_press = false;
       break;
@@ -216,7 +232,7 @@ void resetSet(void *parameter){
     if(millis() - time >= DEBOUNCE_TIME){
 
       // Ativar flag de repetição
-      if(current_state == LOW){
+      if(current_state == LOW && !playing_audio && chosen_id>=0){
         repeat_audio = true;
       }
 
@@ -241,7 +257,7 @@ void setup() {
 
   // Inicialização do OLED
   Serial.println();
-  Serial.println("Inicializando OLED...");
+  Serial.print("Inicializando OLED... ");
 
   pinMode(Vext, OUTPUT);
   digitalWrite(Vext, LOW);
@@ -257,10 +273,10 @@ void setup() {
   display.drawString(display.getWidth() / 2, 20, "INICIANDO...");
   display.display();
 
-  Serial.println("OLED OK");
+  Serial.println("OK!");
 
   // Inicialização do Bluetooth
-  Serial.println("Inicializando BLE...");
+  Serial.print("Inicializando BLE... ");
 
   BLEDevice::init("");
   bleScanner = BLEDevice::getScan();
@@ -269,7 +285,7 @@ void setup() {
   bleScanner->setInterval(200);
   bleScanner->setWindow(100);
 
-  Serial.println("BLE OK");
+  Serial.println("OK!");
 
   // Inicializaçã do MP3
   mp3Serial.begin(9600, SERIAL_8N1, VIRTUAL_RX, VIRTUAL_TX); delay(100);
@@ -336,27 +352,29 @@ void loop() {
     if(chosen_id<0) chosen_id=0;
 
     // Executar som do id encontrado/escolhido
-    if (!devices[chosen_id].is_set) {
+    if (!devices[chosen_id].is_set && !playing_audio) {
+      playing_audio = true;
       sendCommandMp3(0x0F, true, chosen_language + 1, chosen_id + 1);
 
       Serial.println();
-      Serial.println("Tocando MP3: " + (String)devices[chosen_id].name + " - " + languages[chosen_language]);
+      Serial.println("Tocando MP3: " + (String)devices[chosen_id].name + " (" + languages[chosen_language] + ")");
 
       // Espera terminar o audio atual para continuar para o próximo audio
       while(true){
         if(mp3Serial.available()){
           if(mp3Serial.read()==61){
-            Serial.println("Terminou audio");
+            Serial.println("Terminou");
             break;
           }
         }
         delay(1);
       }
 
+      playing_audio = false;
+
       // Setar que o atual foi reproduzio e limpar os outros
       for(int i=0; i<deviceCount; i++){
         devices[i].is_set = (i==chosen_id);
-        Serial.println((String)i + ": " + (String)(i==chosen_id));
       }
       
     }
@@ -364,17 +382,20 @@ void loop() {
   }
 
   // Repetir audio se solicitado
-  if(repeat_audio){
+  if(repeat_audio && chosen_id>=0){
+    playing_audio = true;
+    Serial.println("Iniciou Repetição");
     sendCommandMp3(0x0F, true, chosen_language + 1, chosen_id + 1);
     while(true){
       if(mp3Serial.available()){
         if(mp3Serial.read()==61){
-          Serial.println("Terminou repetição");
+          Serial.println("Terminou");
           break;
         }
       }
       delay(1);
     }
+    playing_audio = false;
     repeat_audio = false;
   }
 
