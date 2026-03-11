@@ -287,11 +287,6 @@ void setup() {
 
   Serial.println("OK!");
 
-  // Inicializaçã do MP3
-  mp3Serial.begin(9600, SERIAL_8N1, VIRTUAL_RX, VIRTUAL_TX); delay(100);
-  sendCommandMp3(0x0C, false, 0, 0); delay(100);
-  sendCommandMp3(0x06, false, 0, 0x1E);
-
   // Seta a interrupção da mudança de linguagem
   pinMode(BUTTON_INT_LG, INPUT_PULLUP);
   attachInterrupt(BUTTON_INT_LG, buttonLG_ISR, FALLING);
@@ -315,6 +310,22 @@ void setup() {
     NULL,             // handle
     0                 // core (0 ou 1)
   );
+
+  // Inicializaçã do MP3
+  Serial.print("Inicializando MP3... ");
+  mp3Serial.begin(9600, SERIAL_8N1, VIRTUAL_RX, VIRTUAL_TX); delay(100);
+  sendCommandMp3(0x0C, false, 0, 0); delay(100);
+  sendCommandMp3(0x06, false, 0, 0x1E); delay(1000);
+  sendCommandMp3(0x0F, true, 98, 1);
+  while(true){
+    if(mp3Serial.available()){
+      if(mp3Serial.read()==61){
+        break;
+      }
+    }
+    delay(1);
+  }
+  Serial.println("OK!");
 
   lastScanTime = millis();
 }
