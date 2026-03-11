@@ -353,8 +353,11 @@ void loop() {
         delay(1);
       }
 
-      // Setar que já foi reproduzido
-      devices[chosen_id].is_set = true;
+      // Setar que o atual foi reproduzio e limpar os outros
+      for(int i=0; i<deviceCount; i++){
+        devices[i].is_set = (i==chosen_id);
+        Serial.println((String)i + ": " + (String)(i==chosen_id));
+      }
       
     }
 

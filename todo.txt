@@ -1,0 +1,4 @@
+ajustar MAC beacons
+som inicialização
+som seletor de idiomas
+OK - limpar sets
