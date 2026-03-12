@@ -64,6 +64,7 @@ volatile bool bnt_lg_press = false;
 volatile bool bnt_rs_press = false;
 volatile bool repeat_audio = false;
 volatile bool playing_audio = false;
+volatile bool all_initialized = false;
 volatile int chosen_language = 0;
 volatile int chosen_id = -1;
 
@@ -194,6 +195,12 @@ void displayRefrash(void *parameter) {
 
 // =========================== Troca de linguagem =========================== //
 void IRAM_ATTR buttonLG_ISR(){
+
+  // Se não foi tudo inicializado, não ativar thread
+  if(!all_initialized){
+    return;
+  }
+
   // Chama a thread uma vez
   if(!bnt_lg_press){
     bnt_lg_press = true;
@@ -260,6 +267,12 @@ void changeLanguage(void *parameter){
 
 // =========================== Reset de set  =========================== //
 void IRAM_ATTR buttonRS_ISR(){
+
+  // Se não foi tudo inicializado, não ativar thread
+  if(!all_initialized){
+    return;
+  }
+
   // Chama a thread uma vez
   if(!bnt_rs_press){
     bnt_rs_press = true;
@@ -380,6 +393,7 @@ void setup() {
   }
   Serial.println("OK!");
 
+  all_initialized = true;
   lastScanTime = millis();
 }
 
