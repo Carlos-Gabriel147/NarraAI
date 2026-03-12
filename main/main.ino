@@ -1,3 +1,13 @@
+/*
+ * Project: NarraAI Beacon Reader
+ * Author: Carlos Gabriel Bezerra Pereira
+ * Institution: Universidade Federal de Pernambuco (UFPE)
+ * Lab: VoxarLabs - voxarlabs@cin.ufpe.br
+ * Contact: carlosgabrieljj@gmail.com
+ * Created: 2026
+ * License: MIT
+*/
+
 #include <Arduino.h>
 #include <BLEDevice.h>
 #include <BLEScan.h>
@@ -16,8 +26,9 @@
 #define BUTTON_INT_LG 17
 #define BUTTON_INT_RS 18
 #define DEBOUNCE_TIME 20
+#define COUNTER_MAX_0_SIG 6
 
-// Ajuste automático para alguns modelos
+// Escolher display de acordo com a placa
 #ifdef WIRELESS_STICK_V3
 static SSD1306Wire display(0x3c, 500000, SDA_OLED, SCL_OLED, GEOMETRY_64_32, RST_OLED);
 #else
@@ -35,17 +46,17 @@ struct Device {
 
 // Filtro de dispositivos
 volatile Device devices[] = {
-  {"1 - Moiza", "de:ad:be:ef:00:02", -80, -9999, false},
-  {"2 - Pardal", "03:00:ef:be:ad:de", -80, -9999, false},
-  {"3 - Calopsita", "6b:21:77:4c:8f:d2", -80, -999, false}
+  {"1 - Moiza", "de:ad:be:ef:00:02", -90, -9999, false},
+  {"2 - Pardal", "03:00:ef:be:ad:de", -90, -9999, false},
+  {"3 - Calopsita", "6b:21:77:4c:8f:d2", -90, -9999, false}
 };
 
 // Linguagens
 const char* languages[] = { "Português", "English", "Español" };
-size_t num_languages = sizeof(languages) / sizeof(languages[0]);
 
-// Quantiade de dispositivos
-const int deviceCount = sizeof(devices) / sizeof(devices[0]);
+// Quantiade de dispositivos e linguagens
+const size_t num_languages = sizeof(languages) / sizeof(languages[0]);
+const size_t deviceCount = sizeof(devices) / sizeof(devices[0]);
 
 // Variáveis globais
 volatile bool finished_scan = false;
@@ -56,7 +67,9 @@ volatile bool playing_audio = false;
 volatile int chosen_language = 0;
 volatile int chosen_id = -1;
 
-static uint32_t lastScanTime = 0;
+uint8_t dcr_counter = 0;
+uint8_t display_custom_rssi = 0;
+uint32_t lastScanTime = 0;
 int pass_rssi = -9999;
 
 std::vector<int> devices_found;
@@ -110,7 +123,7 @@ void startScan() {
 // =========================== MP3 Command =========================== //
 void sendCommandMp3(uint8_t cmd, bool fb = true, uint8_t arg1 = 0, uint8_t arg2 = 0) {
   uint8_t command[8] = { 0x7E, 0xFF, 0x06, cmd, (uint8_t)fb, arg1, arg2, 0xEF };
-  mp3Serial.write(command, sizeof(command));
+  mp3Serial.write(command, 8);
   mp3Serial.flush();
 }
 
@@ -122,24 +135,61 @@ void displayRefrash(void *parameter) {
     display.clear();
     display.setTextAlignment(TEXT_ALIGN_CENTER);
 
-    // ----- TÍTULO -----
+    // ---------------- BARRAS DE SINAL ----------------
+    int bars = 0;
+
+    if(display_custom_rssi >= 70) bars = 5;
+    else if(display_custom_rssi >= 55) bars = 4;
+    else if(display_custom_rssi >= 45) bars = 3;
+    else if(display_custom_rssi >= 25) bars = 2;
+    else if(display_custom_rssi >= 10) bars = 1;
+    else bars = 0;
+
+    int barWidth = 3;
+    int spacing = 2;
+
+    int totalWidth = 5 * barWidth + 4 * spacing;
+    int baseX = display.getWidth() - totalWidth - 2;
+    int baseY = 14;
+
+    if(bars == 0){
+
+      display.setTextAlignment(TEXT_ALIGN_CENTER);
+      display.setFont(ArialMT_Plain_10);
+
+      int centerX = baseX + totalWidth / 2;
+      display.drawString(centerX, 2, "x");
+
+    }
+    else{
+
+      for(int i = 0; i < bars; i++) {
+        int height = 2 + i * 2;
+        int x = baseX + i * (barWidth + spacing);
+        int y = baseY - height;
+        display.fillRect(x, y, barWidth, height);
+      }
+
+    }
+
+    // ---------------- TÍTULO ----------------
     display.setFont(ArialMT_Plain_16);
 
     if(chosen_id >= 0){
-      display.drawString(display.getWidth()/2, 12, devices[chosen_id].name);
+      display.drawString(display.getWidth()/2, 16, devices[chosen_id].name);
     }
     else{
-      display.drawString(display.getWidth()/2, 4, "- - -");
+      display.drawString(display.getWidth()/2, 16, "- - -");
     }
 
-    // ----- IDIOMA -----
+    // ---------------- IDIOMA ----------------
     display.setFont(ArialMT_Plain_16);
     display.drawString(display.getWidth()/2, display.getHeight() - 20, languages[chosen_language]);
+
     display.display();
 
     vTaskDelay(200 / portTICK_PERIOD_MS);
   }
-
 }
 
 // =========================== Troca de linguagem =========================== //
@@ -198,6 +248,9 @@ void changeLanguage(void *parameter){
     // Atualizar estado anterior
     previous_state = current_state;
 
+    // Limitar o uso da cpu
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+
   }
 
   vTaskDelete(NULL);
@@ -243,6 +296,9 @@ void resetSet(void *parameter){
     // Atualizar estado anterior
     previous_state = current_state;
 
+    // Limitar uso da CPU
+    vTaskDelay(1 / portTICK_PERIOD_MS);
+
   }
 
   vTaskDelete(NULL);
@@ -270,7 +326,7 @@ void setup() {
   display.setContrast(255);
   display.setTextAlignment(TEXT_ALIGN_CENTER);
   display.setFont(ArialMT_Plain_16);
-  display.drawString(display.getWidth() / 2, 20, "INICIANDO...");
+  display.drawString(display.getWidth() / 2, 20, "Starting...");
   display.display();
 
   Serial.println("OK!");
@@ -295,11 +351,6 @@ void setup() {
   pinMode(BUTTON_INT_RS, INPUT_PULLUP);
   attachInterrupt(BUTTON_INT_RS, buttonRS_ISR, FALLING);
 
-  // Tudo inicializado
-  display.clear();
-  display.drawString(display.getWidth() / 2, 20, "INICIADO!");
-  display.display();
-
   // Inicia thread de atualização do display
   xTaskCreatePinnedToCore(
     displayRefrash,      // função
@@ -323,7 +374,7 @@ void setup() {
         break;
       }
     }
-    delay(1);
+    vTaskDelay(1 / portTICK_PERIOD_MS);
   }
   Serial.println("OK!");
 
@@ -340,54 +391,67 @@ void loop() {
   }
 
   // Ao término do scan e se encontrou algo
-  if (finished_scan && !devices_found.empty()) {
-
+  if (finished_scan) {
     finished_scan = false;
-    pass_rssi = -9999;
 
-    // Percorre os dispositivos encontrados
-    for (int id : devices_found) {
+    if(!devices_found.empty()){
 
-      int current_rssi = devices[id].current_rssi;
+      pass_rssi = -9999;
+      // Percorre os dispositivos encontrados
+      for (int id : devices_found) {
 
-      if (current_rssi > pass_rssi) {
-        pass_rssi = current_rssi;
-        chosen_id = id;
-      }
-    }
+        int current_rssi = devices[id].current_rssi;
 
-    // Limpa a lista para a próxima procura
-    devices_found.clear();
-
-    // Evitar acesso de memória inválido, caso haja algum erro
-    if(chosen_id<0) chosen_id=0;
-
-    // Executar som do id encontrado/escolhido
-    if (!devices[chosen_id].is_set && !playing_audio) {
-      playing_audio = true;
-      sendCommandMp3(0x0F, true, chosen_language + 1, chosen_id + 1);
-
-      Serial.println();
-      Serial.println("Tocando MP3: " + (String)devices[chosen_id].name + " (" + languages[chosen_language] + ")");
-
-      // Espera terminar o audio atual para continuar para o próximo audio
-      while(true){
-        if(mp3Serial.available()){
-          if(mp3Serial.read()==61){
-            Serial.println("Terminou");
-            break;
-          }
+        if (current_rssi > pass_rssi) {
+          pass_rssi = current_rssi;
+          chosen_id = id;
         }
-        delay(1);
       }
 
-      playing_audio = false;
+      // Limpa a lista para a próxima procura
+      devices_found.clear();
 
-      // Setar que o atual foi reproduzio e limpar os outros
-      for(int i=0; i<deviceCount; i++){
-        devices[i].is_set = (i==chosen_id);
+      // Evitar acesso de memória inválido, caso haja algum erro
+      if(chosen_id<0) chosen_id=0;
+
+      // Executar som do id encontrado/escolhido
+      if (!devices[chosen_id].is_set && !playing_audio) {
+        playing_audio = true;
+        sendCommandMp3(0x0F, true, chosen_language + 1, chosen_id + 1);
+
+        Serial.println();
+        Serial.println("Tocando MP3: " + (String)devices[chosen_id].name + " (" + languages[chosen_language] + ")");
+
+        // Espera terminar o audio atual para continuar para o próximo audio
+        while(true){
+          if(mp3Serial.available()){
+            if(mp3Serial.read()==61){
+              Serial.println("Terminou");
+              break;
+            }
+          }
+          vTaskDelay(1 / portTICK_PERIOD_MS);
+        }
+
+        playing_audio = false;
+
+        // Setar que o atual foi reproduzio e limpar os outros
+        for(size_t i=0; i<deviceCount; i++){
+          devices[i].is_set = (i==chosen_id);
+        } 
       }
-      
+
+      // Rssi que é mostrado na tela
+      display_custom_rssi = max(1, min(devices[chosen_id].current_rssi+120, 100));
+      dcr_counter = 0;
+
+    // Se finalizou um scan e nao encontrou mais dispositivos, dizer que é 0 de "potencia"
+    }else{
+      dcr_counter += 1;
+      if(dcr_counter>=COUNTER_MAX_0_SIG){
+        display_custom_rssi = 0;
+        dcr_counter = 0;
+      }
     }
 
   }
@@ -404,11 +468,11 @@ void loop() {
           break;
         }
       }
-      delay(1);
+      vTaskDelay(1 / portTICK_PERIOD_MS);
     }
     playing_audio = false;
     repeat_audio = false;
   }
 
-  delay(10);
+  vTaskDelay(10 / portTICK_PERIOD_MS);
 }
