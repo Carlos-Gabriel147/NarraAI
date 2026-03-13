@@ -177,10 +177,10 @@ void displayRefrash(void *parameter) {
     display.setFont(ArialMT_Plain_16);
 
     if(chosen_id >= 0){
-      display.drawString(display.getWidth()/2, 16, devices[chosen_id].name);
+      display.drawString(display.getWidth()/2, 20, devices[chosen_id].name);
     }
     else{
-      display.drawString(display.getWidth()/2, 16, "- - -");
+      display.drawString(display.getWidth()/2, 20, "- - -");
     }
 
     // ---------------- IDIOMA ----------------
@@ -427,6 +427,10 @@ void loop() {
       // Limpa a lista para a próxima procura
       devices_found.clear();
 
+      // Rssi que é mostrado na tela
+      display_custom_rssi = max(1, min(devices[chosen_id].current_rssi+120, 100));
+      dcr_counter = 0;
+
       // Evitar acesso de memória inválido, caso haja algum erro
       if(chosen_id<0) chosen_id=0;
 
@@ -455,10 +459,6 @@ void loop() {
           devices[i].is_set = (i==chosen_id);
         } 
       }
-
-      // Rssi que é mostrado na tela
-      display_custom_rssi = max(1, min(devices[chosen_id].current_rssi+120, 100));
-      dcr_counter = 0;
 
     // Se finalizou um scan e nao encontrou mais dispositivos, dizer que é 0 de "potencia"
     }else{
